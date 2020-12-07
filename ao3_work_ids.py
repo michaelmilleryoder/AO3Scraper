@@ -15,6 +15,7 @@ import csv
 import sys
 import datetime
 import argparse
+import pdb
 
 page_empty = False
 base_url = ""
@@ -258,4 +259,5 @@ def main():
 
     print ("That's all, folks.")
 
-main()
+if __name__=='__main__':
+    main()
