@@ -1,6 +1,6 @@
 # AO3Scraper
 
-In collaboration with [@ssterman](https://github.com/ssterman). A simple Python [Archive of Our Own](https://archiveofourown.org/) scraper. Now with HASTAC 2017 [presentation slides](http://tiny.cc/ao3-slides)!
+In collaboration with [@ssterman](https://github.com/ssterman). A simple Python [Archive of Our Own](https://archiveofourown.org/) scraper. Now with HASTAC 2017 [presentation slides](https://docs.google.com/presentation/d/1GrpMYw25Bz_m0r2hv0Orgp-uxSIi4HdrHpzL6deCopc)!
 
 Features:
 - Given a fandom URL and amount of fic you want, returns a list of the fic IDs. (ao3_work_ids.py)
@@ -8,6 +8,7 @@ Features:
 - Given the CSV of fic metadata and content created by ao3_get_fanfics.py, saves a new CSV of only the metadata. (extract_metadata.py)
 - Given the CSV of fic metadata and content created by ao3_get_fanfics.py, creates a folder of individual text files containing the body of each fic (csv_to_txts.py)
 - Given the CSV of fic metadata and content created by ao3_get_fanfics.py, uses an AO3 tag URL to count the number of works using that tag or its wrangled synonyms (get_tag_counts.py)
+- (new!) Scrape users who have authored, kudos-ed, bookmarked (``get_authors, get_kudos, get_bookmarks`` functions)
 
 
 ## Dependencies
@@ -56,3 +57,6 @@ We love pull requests!
 ## FF.net
 
 Want to scrape fanfiction.net? Check out my friend [@smilli](https://github.com/smilli/)'s [ff.net scraper](https://github.com/smilli/fanfiction)! 
+
+## License
+This work is licensed under the Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0). Feel free to use it and adapt it however you want, but don't make money off of it!
