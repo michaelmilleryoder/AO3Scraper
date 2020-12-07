@@ -26,21 +26,67 @@
 # Author: Jingyi Li soundtracknoon [at] gmail
 # I wrote this in Python 2.7. 9/23/16
 # Updated 2/13/18 (also Python3 compatible)
+#
+# Reformatted output to be consistent with fanfiction.net scraper
+# Sept 2018  Chris Bogart
 #######
 
 import requests
-import urllib
 from bs4 import BeautifulSoup
+import bs4
+import json
+import gzip
 import argparse
 import time
 import os
+import pdb
+import re
 import csv
 import sys
-from unidecode import unidecode
-import pdb
-import hashlib
-from tqdm import tqdm
-import http
+#from unidecode import unidecode
+
+# We don't want to convert unicode to ascii particularly
+def unidecode(st): return st
+
+def safe(st):
+    try: return st.encode("utf-8", "default")
+    except: return st
+
+def maybe_json(s):
+    if type(s) is list: return json.dumps(s)
+    if type(s) is dict: return json.dumps(s)
+    else: return s
+
+def consolidate(tags):
+    return " ".join([unidecode(t.text if type(t) is bs4.element.Tag else t).strip() for t in tags])
+
+def into_chunks(tag):
+    previouschild  = []
+    for i, child in enumerate(tag.children):
+        if child.name == "p":
+            if len(previouschild): 
+                yield consolidate(previouschild)
+                previouschild = []
+            for chunk in into_chunks(child):
+                yield chunk
+        elif child.name == "div":
+            if len(previouschild): 
+                yield consolidate(previouschild)
+                previouschild = []
+            for chunk in into_chunks(child): 
+                yield chunk
+        elif child.name == "br":
+            if len(previouschild): 
+                yield consolidate(previouschild)
+                previouschild = []
+        elif type(child) is bs4.element.Tag:
+            previouschild.append(child)
+        else:
+            previouschild.append(child)
+    yield consolidate(previouschild)
+
+def into_text(tag):
+    return "\n".join([ch.strip() for ch in into_chunks(tag) if len(ch.strip()) > 0])
 
 def get_tag_info(category, meta):
     '''
@@ -51,33 +97,47 @@ def get_tag_info(category, meta):
     except AttributeError as e:
         return []
     return [unidecode(result.text) for result in tag_list] 
+
+def get_series(meta):
+    try:
+        seriesregion = meta.find("span",class_="series").find("span",class_="position")
+        part_and_name = re.search("Part (\d+) of the (.*) series", seriesregion.text)
+        seriespart = part_and_name.group(1)
+        series = part_and_name.group(2)
+        seriesid = seriesregion.find("a")["href"].split("/")[2]
+    except:
+        series = ""
+        seriespart = ""
+        seriesid = ""
+    return (series, seriespart, seriesid)
     
 def get_stats(meta):
-	'''
-	returns a list of  
-	language, published, status, date status, words, chapters, comments, kudos, bookmarks, hits
-	'''
-	categories = ['language', 'published', 'status', 'words', 'chapters', 'comments', 'kudos', 'bookmarks', 'hits'] 
+    '''
+    returns a dictionary of  
+    language, published, status, date status, words, chapters, comments, kudos, bookmarks, hits
+    '''
+    categories = ['language', 'published', 'status', 'words', 'chapters', 'comments', 'kudos', 'bookmarks', 'hits'] 
 
-	stats = list(map(lambda category: meta.find("dd", class_=category), categories))
+    stats = {}
+    for category in categories:
+        try:
+            stat = unidecode(meta.find("dd", class_=category).text )
+        except Exception, e:
+            stat = "null"
+            print type(e), e, category
+        stats[category] = stat
 
-	if not stats[2]:
-		stats[2] = stats[1] #no explicit completed field -- one shot
-	try:		
-		stats = [unidecode(stat.text) for stat in stats]
-	except AttributeError as e: #for some reason, AO3 sometimes miss stat tags (like hits)
-		new_stats = []
-		for stat in stats:
-			if stat: new_stats.append(unidecode(stat.text))
-			else: new_stats.append('null')
-		stats = new_stats
+    stats["status date"] = stats.get("status",stats["published"])
+    stats["language"] = stats["language"].strip()
 
-	stats[0] = stats[0].rstrip().lstrip() #language has weird whitespace characters
-	#add a custom completed/updated field
-	status  = meta.find("dt", class_="status")
-	if not status: status = 'Completed' 
-	else: status = status.text.strip(':')
-	stats.insert(2, status)
+    #add a custom completed/updated field
+    thestatus  = meta.find("dt", class_="status")
+    if not thestatus: status = 'Completed' 
+    else: status = thestatus.text.strip(':')
+    stats["status"] = status
+    
+    print stats
+    return stats      
 
 def get_tags(meta):
     '''
@@ -85,77 +145,9 @@ def get_tags(meta):
     rating, category, fandom, pairing, characters, additional_tags
     '''
     tags = ['rating', 'category', 'fandom', 'relationship', 'character', 'freeform']
-    return list(map(lambda tag: get_tag_info(tag, meta), tags))
+    return { tag: get_tag_info(tag, meta) for tag in tags }
 
-# get kudos
-def get_kudos(meta):
-	if (meta):
-		
-		users = []
 
-		## hunt for kudos' contents
-		kudos = meta.contents
-
-		# extract user names
-		for kudo in kudos:
-			if kudo.name == 'a':
-				if 'more users' not in kudo.contents[0] and '(collapse)' not in kudo.contents[0]:
-					users.append(kudo.contents[0])
-		
-		return users
-	return []
-
-# get author(s)
-def get_authors(meta):
-	tags = meta.contents
-	authors = []
-
-	for tag in tags:
-		if tag.name == 'a':
-			authors.append(tag.contents[0])
-
-	return authors
-
-# get bookmarks by page
-def get_bookmarks(url, header_info):
-	bookmarks = []
-	headers = {'user-agent' : header_info}
-
-	req = requests.get(url, headers=headers)
-	src = req.text
-	soup = BeautifulSoup(src, 'html.parser')
-
-	# find all pages
-	if (soup.find('ol', class_='pagination actions')):
-		pages = soup.find('ol', class_='pagination actions').findChildren("li" , recursive=False)
-		max_pages = int(pages[-2].contents[0].contents[0])
-		count = 1
-
-		while count <= max_pages:
-			# extract each bookmark per user
-			tags = soup.findAll('h5', class_='byline heading')
-			bookmarks += get_users(tags)
-
-			# next page
-			count+=1
-			req = requests.get(url+'?page='+str(count), headers=headers)
-			src = req.text
-			soup = BeautifulSoup(src, 'html.parser')
-	else:
-		tags = soup.findAll('h5', class_='byline heading')
-		bookmarks += get_users(tags)
-
-	return bookmarks
-
-# get users form bookmarks	
-def get_users (meta):
-	users = []
-	for tag in meta:
-			user = tag.findChildren("a" , recursive=False)[0].contents[0]
-			users.append(user)
-
-	return users
-	
 def access_denied(soup):
     if (soup.find(class_="flash error")):
         return True
@@ -163,53 +155,176 @@ def access_denied(soup):
         return True
     return False
 
-def write_fic_to_csv(fic_id, only_first_chap, writer, errorwriter, header_info=''):
-	'''
-	fic_id is the AO3 ID of a fic, found every URL /works/[id].
-	writer is a csv writer object
-	the output of this program is a row in the CSV file containing all metadata 
-	and the fic content itself.
-	header_info should be the header info to encourage ethical scraping.
-	'''
-	print('Scraping ', fic_id)
-	url = 'http://archiveofourown.org/works/'+str(fic_id)+'?view_adult=true'
-	if not only_first_chap:
-		url = url + '&amp;view_full_work=true'
-	headers = {'user-agent' : header_info}
-	req = requests.get(url, headers=headers)
-	src = req.text
-	soup = BeautifulSoup(src, 'html.parser')
-	if (access_denied(soup)):
-		print('Access Denied')
-		error_row = [fic_id] + ['Access Denied']
-		errorwriter.writerow(error_row)
-	else:
-		meta = soup.find("dl", class_="work meta group")
-		author = get_authors(soup.find("h3", class_="byline heading"))
-		tags = get_tags(meta)
-		stats = get_stats(meta)
-		title = unidecode(soup.find("h2", class_="title heading").string).strip()
-		visible_kudos = get_kudos(soup.find('p', class_='kudos'))
-		hidden_kudos = get_kudos(soup.find('span', class_='kudos_expanded hidden'))
-		all_kudos = visible_kudos + hidden_kudos
-		
-		#get bookmarks
-		bookmark_url = 'http://archiveofourown.org/works/'+str(fic_id)+'/bookmarks'
-		all_bookmarks = get_bookmarks(bookmark_url, header_info)
+def url2cache(url):
+    cache = "raw/" + re.sub(r'[^a-zA-Z0-9]', '_', url) + ".gz"
+    return cache
 
-		#get the fic itself
-		content = soup.find("div", id= "chapters")
-		chapters = content.select('p')
-		chaptertext = '\n\n'.join([unidecode(chapter.text) for chapter in chapters])
-		row = [fic_id] + [title] + [author] + list(map(lambda x: ', '.join(x), tags)) + stats  + [all_kudos] + [all_bookmarks] + [chaptertext]
 
-		try:
-			writer.writerow(row)
-		except:
-			print('Unexpected error: ', sys.exc_info()[0])
-			error_row = [fic_id] +  [sys.exc_info()[0]]
-			errorwriter.writerow(error_row)
-		print('Done.')
+def robust_get(url, headers):
+    delay = 5
+    cache = url2cache(url)
+    if os.path.isfile(cache):
+        return gzip.open(cache).read().decode("utf-8","default")
+    req = None
+    req_count = 10
+    req_err = None
+    while req_count > 0 and req is None:
+        try:
+            time.sleep(delay)
+            req = requests.get(url, headers=headers)
+            with gzip.open(cache,"wb") as f:
+                f.write(req.text.encode("utf-8"))
+        except Exception, e:
+            req = None
+            req_err = e
+            req_count -= 1
+            print "ERROR, on ", url, " sleeping 30"
+            print type(e), e
+            time.sleep(30)
+    if req_count == 0 and req is None:
+        raise req_err
+    return req.text
+
+def workdir(fandom): return "ao3_" + fandom + "_text"
+def storiescsv(fandom): return "ao3_" + fandom + "_text/stories.csv"
+def errorscsv(fandom): return "ao3_" + fandom + "_text/errors.csv"
+def chapterscsv(fandom): return "ao3_" + fandom + "_text/chapters.csv"
+def contentdir(fandom): return "ao3_" + fandom + "_text/stories/"
+def contentfile(fandom, workid, chapterid): 
+    return contentdir(fandom) + workid + "_" + str(chapterid).zfill(4) + ".csv"
+
+def write_fic_to_csv(fandom, fic_id, only_first_chap, storywriter, chapterwriter, errorwriter, storycolumns, chaptercolumns, header_info=''):
+    '''
+    fandom is the grouping that determines filenames etc.
+    fic_id is the AO3 ID of a fic, found every URL /works/[id].
+    writer is a csv writer object
+    the output of this program is a row in the CSV file containing all metadata 
+    and the fic content itself.
+    header_info should be the header info to encourage ethical scraping.
+    '''
+    print('Scraping ', fic_id)
+    get_comments = True
+    url = 'http://archiveofourown.org/works/'+str(fic_id)+'?view_adult=true'
+    if not only_first_chap:
+        url = url + '&view_full_work=true'
+    if get_comments:
+        url = url + '&show_comments=true'
+    headers = {'user-agent' : header_info}
+    src = robust_get(url, headers)
+    soup = BeautifulSoup(src, 'lxml')
+    if (access_denied(soup)):
+        print('Access Denied')
+        open("err_" + str(fic_id) + ".err.txt", "w").write(src)
+        error_row = [fic_id] + ['Access Denied']
+        errorwriter.writerow(error_row)
+    else:
+        meta = soup.find("dl", class_="work meta group")
+        (series, seriespart, seriesid) = get_series(meta)
+        tags = get_tags(meta)
+        stats = get_stats(meta)
+        title = unidecode(soup.find("h2", class_="title heading").string).strip()
+        author = unidecode(soup.find(class_="byline").text).strip()
+        try:
+            href = soup.find(class_="byline").find("a")["href"]
+            author_key = href.split("/")[2]
+            author_pseudo = href.split("/")[4]
+        except Exception, e:
+            print('Unexpected error getting authorship: ', sys.exc_info()[0])
+            error_row = [fic_id] +  [sys.exc_info()[0]]
+            errorwriter.writerow(error_row)
+            author_key = author
+            author_pseudo= author
+            
+        #get the fic itself
+        content = soup.find("div", id= "chapters")
+        #chapters = content.findAll("div", id=re.compile('^chapter-'))
+        chapnodes = content.findAll("div", id=re.compile('^chapter-'))
+        if len(chapnodes) == 0: chapnodes = soup.findAll("div", id="chapters")
+        chapter_titles = [t.h3.text.strip()  for t in chapnodes]
+        chapters = [ch.find("div", class_="userstuff") for ch in chapnodes]
+        #content.findAll("div", class_="userstuff") #id=re.compile('^chapter-'))
+        #chapters = content.findAll("div", class_="userstuff") #id=re.compile('^chapter-'))
+        #chapter_titles = [unidecode(t.find("h3").text).strip() for t in content.findAll("div", class_="preface")]
+        #if len(chapter_titles) == 0:
+        #    chapter_titles = [title]
+
+
+        st_summary = ""
+        st_preface_notes = ""
+        st_afterword_notes = ""
+        for preface in soup.find_all("div", class_="preface"):
+            if "afterword" in preface.attrs['class']:
+                try:
+                    st_afterword_notes = into_text(preface.find("blockquote"))
+                except: pass
+            elif "chapter" not in preface.attrs['class']:
+                try:
+                    st_preface_notes = into_text(preface.find("div",class_="notes").find("blockquote"))
+                except: pass
+                try:
+                    st_summary = into_text(preface.find("div",class_="summary").find("blockquote"))
+                except: pass
+
+        strow = { "fic_id": fic_id,
+                  "title": title.encode("utf-8"),
+                  "summary": st_summary.encode("utf-8"),
+                  "preface_notes": st_preface_notes.encode("utf-8"),
+                  "afterword_notes": st_afterword_notes.encode("utf-8"),
+                  "series": series,
+                  "seriespart": seriespart,
+                  "seriesid": seriesid,
+                  "author": author_pseudo.encode("utf-8"),
+                  "author_key": author_key.encode("utf-8"),
+                  "additional tags": tags["freeform"],
+                  "chapter_count": len(chapters) }
+        strow = dict(strow, **tags)
+        strow = dict(strow, **stats)
+        storywriter.writerow([safe(maybe_json(strow.get(k,"null"))) for k in storycolumns])
+            
+
+        # get div class=notes under div class=preface, and under div class=afterword; class-level notes
+        # get div class=summary under div class=preface
+        for ch, chall in enumerate(chapters):
+            chapter_title = chapter_titles[ch]
+            paras = [t.text if type(t) is bs4.element.Tag else t for t in into_chunks(chall)]
+            paras = [unidecode(t).strip() for t in paras if len(t.strip()) > 0 and t.strip() != "Chapter Text"]
+             
+            ch_preface_notes = ""
+            ch_summary = ""
+            ch_afterword_notes = ""
+            chapnode = chapnodes[ch]
+            try:
+                ch_summary = into_text(chapnode.find("div", class_="preface").find("div", id="summary").find("blockquote"))
+            except: pass
+            try:
+                ch_preface_notes = into_text(chapnode.find("div", class_="preface").find("div", id="notes").find("blockquote"))
+            except: pass
+            try:
+                ch_afterword_notes = into_text(chapnode.find("div", class_="end").find("blockquote"))
+            except: pass
+            # div class=end notes --> id=notes
+            chrow =  {
+                 "fic_id": fic_id,
+                 "title": title.encode("utf-8"),
+                 "summary": ch_summary.encode("utf-8"),
+                 "preface_notes": ch_preface_notes.encode("utf-8"),
+                 "afterword_notes": ch_afterword_notes.encode("utf-8"),
+                 "chapter_num": str(ch+1),
+                 "chapter_title": chapter_title.encode("utf-8"),
+                 "paragraph_count": len(paras)}
+            chapterwriter.writerow([chrow.get(k,"null") for k in chaptercolumns])
+            content_out = csv.writer(open(contentfile(fandom, fic_id, ch+1), "w"))
+            content_out.writerow(['fic_id', 'chapter_id','para_id','text'])
+            for pn, para in enumerate(paras):
+                try:
+                    content_out.writerow([fic_id, ch+1, pn+1, para.encode("utf-8")])
+                except:
+                    print('Unexpected error: ', sys.exc_info()[0])
+                    pdb.set_trace()
+                    error_row = [fic_id] +  [sys.exc_info()[0]]
+                    errorwriter.writerow(error_row)
+            content_out = None
+        print('Done.')
 
 def get_args(): 
     parser = argparse.ArgumentParser(description='Scrape and save some fanfic, given their AO3 IDs.')
@@ -217,8 +332,8 @@ def get_args():
         'ids', metavar='IDS', nargs='+',
         help='a single id, a space seperated list of ids, or a csv input filename')
     parser.add_argument(
-        '--csv', default='fanfics.csv',
-        help='csv output file name')
+        '--fandom', default='some_fandom',
+        help='fandom identifier')
     parser.add_argument(
         '--header', default='',
         help='user http header')
@@ -230,16 +345,20 @@ def get_args():
         help='only retrieve first chapter of multichapter fics')
     args = parser.parse_args()
     fic_ids = args.ids
-    is_csv = (len(fic_ids) == 1 and '.csv' in fic_ids[0]) 
-    csv_out = str(args.csv)
+    idlist_is_csv = (len(fic_ids) == 1 and '.csv' in fic_ids[0]) 
+    fandom = str(args.fandom)
     headers = str(args.header)
+    if headers == "":
+        if os.path.isfile(".browser_header.txt"):
+            headers = open(".browser_header.txt", "r").read().strip()
+    print "Using", headers, "to self-identify to ArchiveOfOurOwn"
     restart = str(args.restart)
     ofc = str(args.firstchap)
     if ofc != "":
         ofc = True
     else:
         ofc = False
-    return fic_ids, csv_out, headers, restart, is_csv, ofc
+    return fic_ids, fandom, headers, restart, idlist_is_csv, ofc
 
 '''
 
@@ -253,50 +372,50 @@ def process_id(fic_id, restart, found):
         return False
 
 def main():
-<<<<<<< HEAD
-    fic_ids, csv_out, headers, restart, is_csv, only_first_chap = get_args()
-    delay = 5
+    fic_ids, fandom, headers, restart, idlist_is_csv, only_first_chap = get_args()
     os.chdir(os.getcwd())
-    with open(csv_out, 'a') as f_out:
-        writer = csv.writer(f_out)
-        error_fpath = os.path.split(csv_out)[0] + 'errors_' + os.path.split(csv_out)[1]
-        with open(error_fpath, 'a') as e_out:
+    storycolumns = ['fic_id', 'title', 'author', 'author_key', 'rating', 'category', 'fandom', 'relationship', 'character', 'additional tags', 'language', 'published', 'status', 'status date', 'words', 'comments', 'kudos', 'bookmarks', 'hits', 'chapter_count', 'series','seriespart','seriesid', 'summary', 'preface_notes','afterword_notes']
+    chaptercolumns = ['fic_id', 'title', 'summary', 'preface_notes', 'afterword_notes', 'chapter_num', 'chapter_title', 'paragraph_count']
+    textcolumns = ['fic_id', 'chapter_id','para_id','text']
+    if not os.path.exists(workdir(fandom)):
+        os.mkdir(workdir(fandom))
+    if not os.path.exists(contentdir(fandom)):
+        os.mkdir(contentdir(fandom))
+    with open(storiescsv(fandom), 'a') as f_out:
+      storywriter = csv.writer(f_out)
+      with open(chapterscsv(fandom), 'a') as ch_out:
+        chapterwriter = csv.writer(ch_out)
+        with open(errorscsv(fandom), 'a') as e_out:
             errorwriter = csv.writer(e_out)
             #does the csv already exist? if not, let's write a header row.
-            if os.stat(csv_out).st_size == 0:
+            if os.stat(storiescsv(fandom)).st_size == 0:
                 print('Writing a header row for the csv.')
-                header = ['work_id', 'title', 'author_hash', 'rating', 'category', 'fandom', 'relationship', 'character', 'additional tags', 'language', 'published', 'status', 'status date', 'words', 'chapters', 'comments', 'kudos', 'bookmarks', 'hits', 'body']
-                writer.writerow(header)
-            if is_csv:
+                storywriter.writerow(storycolumns)
+            if os.stat(chapterscsv(fandom)).st_size == 0:
+                print('Writing a header row for the csv.')
+                chapterwriter.writerow(chaptercolumns)
+            if idlist_is_csv:
                 csv_fname = fic_ids[0]
-                with open(csv_fname, 'r') as f_in:
-                    reader = csv.reader(f_in)
-                    num_fic_ids = sum(1 for row in reader)
-
                 with open(csv_fname, 'r+') as f_in:
                     reader = csv.reader(f_in)
                     if restart is '':
-                        for row in tqdm(reader, total=num_fic_ids, ncols=50):
+                        for row in reader:
                             if not row:
                                 continue
-                            write_fic_to_csv(row[0], only_first_chap, writer, errorwriter, headers)
-                            time.sleep(delay)
+                            write_fic_to_csv(fandom, row[0], only_first_chap, storywriter, chapterwriter, errorwriter, storycolumns, chaptercolumns, headers)
                     else: 
                         found_restart = False
-                        num_skipped = 0
-                        for row in tqdm(reader, total=num_fic_ids, ncols=50):
+                        for row in reader:
                             if not row:
                                 continue
                             found_restart = process_id(row[0], restart, found_restart)
                             if found_restart:
-                                write_fic_to_csv(row[0], only_first_chap, writer, errorwriter, headers)
-                                time.sleep(delay)
+                                write_fic_to_csv(fandom, row[0], only_first_chap, storywriter, chapterwriter, errorwriter, storycolumns, chaptercolumns, headers)
                             else:
-                                tqdm.write('Skipping already processed fic')
+                                print('Skipping already processed fic')
 
             else:
-                for fic_id in tqdm(fic_ids, ncols=50):
-                    write_fic_to_csv(fic_id, only_first_chap, writer, errorwriter, headers)
-                    time.sleep(delay)
+                for fic_id in fic_ids:
+                    write_fic_to_csv(fandom, fic_id, only_first_chap, storywriter, chapterwriter, errorwriter, storycolumns, chaptercolumns, headers)
 
 main()

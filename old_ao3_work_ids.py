@@ -15,6 +15,7 @@ import csv
 import sys
 import datetime
 import argparse
+import pdb
 
 page_empty = False
 base_url = ""
@@ -61,9 +62,6 @@ def get_args():
         '--header', default='',
         help='user http header')
     parser.add_argument(
-        '--start_with_page', default=1, 
-        help='page to start scraping')
-    parser.add_argument(
         '--num_to_retrieve', default='a', 
         help='how many fic ids you want')
     parser.add_argument(
@@ -107,17 +105,7 @@ def get_args():
 def get_ids(header_info=''):
     global page_empty
     headers = {'user-agent' : header_info}
-    try:
-        req = requests.get(url, headers=headers)
-    except requests.exceptions.ConnectionError:
-        print "CONNECTION ERROR", url
-        time.sleep(15)
-        try:
-            req = requests.get(url, headers=headers)
-        except requests.exceptions.ConnectionError:
-            print url, "FAILED TWICE -- SKIPPING"
-            return []
-
+    req = requests.get(url, headers=headers)
     soup = BeautifulSoup(req.text, "lxml")
 
     # some responsiveness in the "UI"
@@ -271,4 +259,5 @@ def main():
 
     print ("That's all, folks.")
 
-main()
+if __name__=='__main__':
+    main()

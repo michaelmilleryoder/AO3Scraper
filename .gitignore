@@ -1,4 +1,5 @@
 README
 output/
+scripts/
 *.csv
 *.sh
