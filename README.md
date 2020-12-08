@@ -1,3 +1,8 @@
+# Changes
+Forked from [@radiolarian](https://github/radiolarian). The main change is the output format (changes largely made by [@cbogart](https://github.com/cbogart).
+
+The optional flag `--outputdir` was added to `ao3_get_fanfics.py`, in which output directories corresponding to fandoms scraped will be saved.
+
 # AO3Scraper
 
 In collaboration with [@ssterman](https://github.com/ssterman). A simple Python [Archive of Our Own](https://archiveofourown.org/) scraper. Now with HASTAC 2017 [presentation slides](https://docs.google.com/presentation/d/1GrpMYw25Bz_m0r2hv0Orgp-uxSIi4HdrHpzL6deCopc)!
@@ -15,6 +20,7 @@ Features:
 - pip install bs4
 - pip install requests
 - pip install unidecode
+- pip install tqdm
 
 ## Example Usage
 

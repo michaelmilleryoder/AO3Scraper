@@ -43,6 +43,7 @@ import pdb
 import re
 import csv
 import sys
+from tqdm import tqdm
 #from unidecode import unidecode
 
 # We don't want to convert unicode to ascii particularly
@@ -124,7 +125,8 @@ def get_stats(meta):
             stat = unidecode(meta.find("dd", class_=category).text )
         except Exception, e:
             stat = "null"
-            print type(e), e, category
+            tqdm.write("Category error:")
+            tqdm.write('{} {} {}'.format(type(e), e, category))
         stats[category] = stat
 
     stats["status date"] = stats.get("status",stats["published"])
@@ -136,7 +138,7 @@ def get_stats(meta):
     else: status = thestatus.text.strip(':')
     stats["status"] = status
     
-    print stats
+    #print stats
     return stats      
 
 def get_tags(meta):
@@ -172,8 +174,8 @@ def robust_get(url, headers):
         try:
             time.sleep(delay)
             req = requests.get(url, headers=headers)
-            with gzip.open(cache,"wb") as f:
-                f.write(req.text.encode("utf-8"))
+            #with gzip.open(cache,"wb") as f:
+            #    f.write(req.text.encode("utf-8"))
         except Exception, e:
             req = None
             req_err = e
@@ -185,15 +187,25 @@ def robust_get(url, headers):
         raise req_err
     return req.text
 
-def workdir(fandom): return "ao3_" + fandom + "_text"
-def storiescsv(fandom): return "ao3_" + fandom + "_text/stories.csv"
-def errorscsv(fandom): return "ao3_" + fandom + "_text/errors.csv"
-def chapterscsv(fandom): return "ao3_" + fandom + "_text/chapters.csv"
-def contentdir(fandom): return "ao3_" + fandom + "_text/stories/"
-def contentfile(fandom, workid, chapterid): 
-    return contentdir(fandom) + workid + "_" + str(chapterid).zfill(4) + ".csv"
+def workdir(output_dirpath, fandom): 
+    return os.path.join(output_dirpath, "ao3_" + fandom + "_text")
 
-def write_fic_to_csv(fandom, fic_id, only_first_chap, storywriter, chapterwriter, errorwriter, storycolumns, chaptercolumns, header_info=''):
+def storiescsv(output_dirpath, fandom): 
+    return os.path.join(output_dirpath, "ao3_" + fandom + "_text/stories.csv")
+
+def errorscsv(output_dirpath, fandom): 
+    return os.path.join(output_dirpath, "ao3_" + fandom + "_text/errors.csv")
+
+def chapterscsv(output_dirpath, fandom): 
+    return os.path.join(output_dirpath, "ao3_" + fandom + "_text/chapters.csv")
+
+def contentdir(output_dirpath, fandom): 
+    return os.path.join(output_dirpath, "ao3_" + fandom + "_text/stories/")
+
+def contentfile(output_dirpath, fandom, workid, chapterid): 
+    return contentdir(output_dirpath, fandom) + workid + "_" + str(chapterid).zfill(4) + ".csv"
+
+def write_fic_to_csv(fandom, fic_id, only_first_chap, storywriter, chapterwriter, errorwriter, storycolumns, chaptercolumns, header_info='', output_dirpath=''):
     '''
     fandom is the grouping that determines filenames etc.
     fic_id is the AO3 ID of a fic, found every URL /works/[id].
@@ -202,7 +214,7 @@ def write_fic_to_csv(fandom, fic_id, only_first_chap, storywriter, chapterwriter
     and the fic content itself.
     header_info should be the header info to encourage ethical scraping.
     '''
-    print('Scraping ', fic_id)
+    tqdm.write('Scraping {}'.format(fic_id))
     get_comments = True
     url = 'http://archiveofourown.org/works/'+str(fic_id)+'?view_adult=true'
     if not only_first_chap:
@@ -313,7 +325,7 @@ def write_fic_to_csv(fandom, fic_id, only_first_chap, storywriter, chapterwriter
                  "chapter_title": chapter_title.encode("utf-8"),
                  "paragraph_count": len(paras)}
             chapterwriter.writerow([chrow.get(k,"null") for k in chaptercolumns])
-            content_out = csv.writer(open(contentfile(fandom, fic_id, ch+1), "w"))
+            content_out = csv.writer(open(contentfile(output_dirpath, fandom, fic_id, ch+1), "w"))
             content_out.writerow(['fic_id', 'chapter_id','para_id','text'])
             for pn, para in enumerate(paras):
                 try:
@@ -324,7 +336,7 @@ def write_fic_to_csv(fandom, fic_id, only_first_chap, storywriter, chapterwriter
                     error_row = [fic_id] +  [sys.exc_info()[0]]
                     errorwriter.writerow(error_row)
             content_out = None
-        print('Done.')
+        tqdm.write('Done.')
 
 def get_args(): 
     parser = argparse.ArgumentParser(description='Scrape and save some fanfic, given their AO3 IDs.')
@@ -343,6 +355,9 @@ def get_args():
     parser.add_argument(
         '--firstchap', default='', 
         help='only retrieve first chapter of multichapter fics')
+    parser.add_argument(
+        '--outputdir', default='',
+        help='Path to the output directory. Will create output/ao3_<fandom>_text directory within that directory.')
     args = parser.parse_args()
     fic_ids = args.ids
     idlist_is_csv = (len(fic_ids) == 1 and '.csv' in fic_ids[0]) 
@@ -358,7 +373,8 @@ def get_args():
         ofc = True
     else:
         ofc = False
-    return fic_ids, fandom, headers, restart, idlist_is_csv, ofc
+    output_dirpath = args.outputdir
+    return fic_ids, fandom, headers, restart, idlist_is_csv, ofc, output_dirpath
 
 '''
 
@@ -372,50 +388,60 @@ def process_id(fic_id, restart, found):
         return False
 
 def main():
-    fic_ids, fandom, headers, restart, idlist_is_csv, only_first_chap = get_args()
+    fic_ids, fandom, headers, restart, idlist_is_csv, only_first_chap, output_dirpath = get_args()
     os.chdir(os.getcwd())
     storycolumns = ['fic_id', 'title', 'author', 'author_key', 'rating', 'category', 'fandom', 'relationship', 'character', 'additional tags', 'language', 'published', 'status', 'status date', 'words', 'comments', 'kudos', 'bookmarks', 'hits', 'chapter_count', 'series','seriespart','seriesid', 'summary', 'preface_notes','afterword_notes']
     chaptercolumns = ['fic_id', 'title', 'summary', 'preface_notes', 'afterword_notes', 'chapter_num', 'chapter_title', 'paragraph_count']
     textcolumns = ['fic_id', 'chapter_id','para_id','text']
-    if not os.path.exists(workdir(fandom)):
-        os.mkdir(workdir(fandom))
-    if not os.path.exists(contentdir(fandom)):
-        os.mkdir(contentdir(fandom))
-    with open(storiescsv(fandom), 'a') as f_out:
+    if not os.path.exists(workdir(output_dirpath, fandom)):
+        os.mkdir(workdir(output_dirpath, fandom))
+    if not os.path.exists(contentdir(output_dirpath, fandom)):
+        os.mkdir(contentdir(output_dirpath, fandom))
+    with open(storiescsv(output_dirpath, fandom), 'a') as f_out:
       storywriter = csv.writer(f_out)
-      with open(chapterscsv(fandom), 'a') as ch_out:
+      with open(chapterscsv(output_dirpath, fandom), 'a') as ch_out:
         chapterwriter = csv.writer(ch_out)
-        with open(errorscsv(fandom), 'a') as e_out:
+        with open(errorscsv(output_dirpath, fandom), 'a') as e_out:
             errorwriter = csv.writer(e_out)
             #does the csv already exist? if not, let's write a header row.
-            if os.stat(storiescsv(fandom)).st_size == 0:
+            if os.stat(storiescsv(output_dirpath, fandom)).st_size == 0:
                 print('Writing a header row for the csv.')
                 storywriter.writerow(storycolumns)
-            if os.stat(chapterscsv(fandom)).st_size == 0:
+            if os.stat(chapterscsv(output_dirpath, fandom)).st_size == 0:
                 print('Writing a header row for the csv.')
                 chapterwriter.writerow(chaptercolumns)
             if idlist_is_csv:
                 csv_fname = fic_ids[0]
+                total_lines = 0
+
+                # Count fics remaining
+                with open(csv_fname, 'r') as f_in:
+                    reader = csv.reader(f_in)
+                    for row in reader:
+                        if not row:
+                            continue
+                        total_lines += 1
+
+                # Scrape fics
                 with open(csv_fname, 'r+') as f_in:
                     reader = csv.reader(f_in)
                     if restart is '':
-                        for row in reader:
+                        for row in tqdm(reader, total=total_lines):
                             if not row:
                                 continue
-                            write_fic_to_csv(fandom, row[0], only_first_chap, storywriter, chapterwriter, errorwriter, storycolumns, chaptercolumns, headers)
+                            write_fic_to_csv(fandom, row[0], only_first_chap, storywriter, chapterwriter, errorwriter, storycolumns, chaptercolumns, headers, output_dirpath)
                     else: 
                         found_restart = False
-                        for row in reader:
+                        for row in tqdm(reader, total=total_lines):
                             if not row:
                                 continue
                             found_restart = process_id(row[0], restart, found_restart)
                             if found_restart:
-                                write_fic_to_csv(fandom, row[0], only_first_chap, storywriter, chapterwriter, errorwriter, storycolumns, chaptercolumns, headers)
+                                write_fic_to_csv(fandom, row[0], only_first_chap, storywriter, chapterwriter, errorwriter, storycolumns, chaptercolumns, headers, output_dirpath=output_dirpath)
                             else:
                                 print('Skipping already processed fic')
 
             else:
                 for fic_id in fic_ids:
-                    write_fic_to_csv(fandom, fic_id, only_first_chap, storywriter, chapterwriter, errorwriter, storycolumns, chaptercolumns, headers)
-
+                    write_fic_to_csv(fandom, fic_id, only_first_chap, storywriter, chapterwriter, errorwriter, storycolumns, chaptercolumns, headers, output_dirpath=output_dirpath) 
 main()
