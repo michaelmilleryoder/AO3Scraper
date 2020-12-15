@@ -1,7 +1,7 @@
 # Changes
-Forked from [@radiolarian](https://github/radiolarian). The main change is the output format (changes largely made by [@cbogart](https://github.com/cbogart).
+Forked from [@radiolarian](https://github/radiolarian). The main change is the output format (changes largely made by [@cbogart](https://github.com/cbogart)).
 
-The optional flag `--outputdir` was added to `ao3_get_fanfics.py`, in which output directories corresponding to fandoms scraped will be saved.
+We added the optional flag `--outputdir` to `ao3_get_fanfics.py`. With this flag, you can specify which directory output directories will be saved in.
 
 # AO3Scraper
 

@@ -15,6 +15,7 @@ import csv
 import sys
 import datetime
 import argparse
+from tqdm import tqdm
 
 page_empty = False
 base_url = ""
@@ -110,19 +111,19 @@ def get_ids(header_info=''):
     try:
         req = requests.get(url, headers=headers)
     except requests.exceptions.ConnectionError:
-        print "CONNECTION ERROR", url
+        print ("CONNECTION ERROR", url)
         time.sleep(15)
         try:
             req = requests.get(url, headers=headers)
         except requests.exceptions.ConnectionError:
-            print url, "FAILED TWICE -- SKIPPING"
+            print (url, "FAILED TWICE -- SKIPPING")
             return []
 
     soup = BeautifulSoup(req.text, "lxml")
 
     # some responsiveness in the "UI"
-    sys.stdout.write('.')
-    sys.stdout.flush()
+    #sys.stdout.write('.')
+    #sys.stdout.flush()
     works = soup.find_all(class_="work blurb group")
 
     # see if we've gone too far and run out of fic: 
@@ -247,11 +248,20 @@ def reset():
     num_recorded_fic = 0
 
 def process_for_ids(header_info=''):
+    ids_written = 0
+    if num_requested_fic > -1:
+        pbar = tqdm(total=num_requested_fic, ncols=70)
+    else:
+        pbar = tqdm()
     while(not_finished()):
         # 5 second delay between requests as per AO3's terms of service
         time.sleep(5)
         ids = get_ids(header_info)
         write_ids_to_csv(ids)
+        pbar.update(len(ids))
+        ids_written += len(ids)
+        #sys.stdout.write('{} IDs written\n'.format(ids_written))
+        sys.stdout.flush()
         update_url_to_next_page()
 
 def main():
@@ -269,6 +279,7 @@ def main():
     else:
         process_for_ids(header_info)
 
-    print ("That's all, folks.")
+    tqdm.write("That's all, folks.")
+    tqdm.write("Written to {}\n".format(csv_name))
 
 main()

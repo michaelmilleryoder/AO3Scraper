@@ -123,7 +123,7 @@ def get_stats(meta):
     for category in categories:
         try:
             stat = unidecode(meta.find("dd", class_=category).text )
-        except Exception, e:
+        except Exception as e:
             stat = "null"
             tqdm.write("Category error:")
             tqdm.write('{} {} {}'.format(type(e), e, category))
@@ -176,12 +176,12 @@ def robust_get(url, headers):
             req = requests.get(url, headers=headers)
             #with gzip.open(cache,"wb") as f:
             #    f.write(req.text.encode("utf-8"))
-        except Exception, e:
+        except Exception as e:
             req = None
             req_err = e
             req_count -= 1
-            print "ERROR, on ", url, " sleeping 30"
-            print type(e), e
+            print("ERROR, on ", url, " sleeping 30")
+            print(type(e), e)
             time.sleep(30)
     if req_count == 0 and req is None:
         raise req_err
@@ -240,7 +240,7 @@ def write_fic_to_csv(fandom, fic_id, only_first_chap, storywriter, chapterwriter
             href = soup.find(class_="byline").find("a")["href"]
             author_key = href.split("/")[2]
             author_pseudo = href.split("/")[4]
-        except Exception, e:
+        except Exception as e:
             print('Unexpected error getting authorship: ', sys.exc_info()[0])
             error_row = [fic_id] +  [sys.exc_info()[0]]
             errorwriter.writerow(error_row)
@@ -337,6 +337,7 @@ def write_fic_to_csv(fandom, fic_id, only_first_chap, storywriter, chapterwriter
                     errorwriter.writerow(error_row)
             content_out = None
         tqdm.write('Done.')
+        tqdm.write(' ')
 
 def get_args(): 
     parser = argparse.ArgumentParser(description='Scrape and save some fanfic, given their AO3 IDs.')
@@ -366,7 +367,7 @@ def get_args():
     if headers == "":
         if os.path.isfile(".browser_header.txt"):
             headers = open(".browser_header.txt", "r").read().strip()
-    print "Using", headers, "to self-identify to ArchiveOfOurOwn"
+    print("Using", headers, "to self-identify to ArchiveOfOurOwn")
     restart = str(args.restart)
     ofc = str(args.firstchap)
     if ofc != "":
@@ -426,13 +427,13 @@ def main():
                 with open(csv_fname, 'r+') as f_in:
                     reader = csv.reader(f_in)
                     if restart is '':
-                        for row in tqdm(reader, total=total_lines):
+                        for row in tqdm(reader, total=total_lines, ncols=70):
                             if not row:
                                 continue
                             write_fic_to_csv(fandom, row[0], only_first_chap, storywriter, chapterwriter, errorwriter, storycolumns, chaptercolumns, headers, output_dirpath)
                     else: 
                         found_restart = False
-                        for row in tqdm(reader, total=total_lines):
+                        for row in tqdm(reader, total=total_lines, ncols=70):
                             if not row:
                                 continue
                             found_restart = process_id(row[0], restart, found_restart)
