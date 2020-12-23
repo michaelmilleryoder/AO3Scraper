@@ -141,7 +141,6 @@ def get_ids(header_info=''):
     if (len(works) is 0):
         page_empty = True
         print(f'\nEnded on url {url}')
-        pdb.set_trace()
 
     # process list for new fic ids
     ids = []

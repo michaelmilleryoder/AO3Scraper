@@ -350,7 +350,8 @@ def write_fic_to_csv(fandom, fic_id, only_first_chap, storywriter, chapterwriter
                         errorwriter.writerow(error_row)
                 content_out = None
             else: # will write out whole fic at once
-                outlines.append([fic_id, ch+1, pn+1, para])
+                for pn, para in enumerate(paras):
+                    outlines.append([fic_id, ch+1, pn+1, para])
 
         if write_whole_fics:
             content_out = csv.writer(open(contentfile(output_dirpath, fandom, fic_id, None), "w"))
@@ -452,7 +453,7 @@ def main():
                         for row in tqdm(reader, total=total_lines, ncols=70):
                             if not row:
                                 continue
-                            write_fic_to_csv(fandom, row[0], only_first_chap, storywriter, chapterwriter, errorwriter, storycolumns, chaptercolumns, headers, output_dirpath)
+                            write_fic_to_csv(fandom, row[0], only_first_chap, storywriter, chapterwriter, errorwriter, storycolumns, chaptercolumns, headers, output_dirpath, write_whole_fics=True)
                     else: 
                         found_restart = False
                         for row in tqdm(reader, total=total_lines, ncols=70):
@@ -460,11 +461,11 @@ def main():
                                 continue
                             found_restart = process_id(row[0], restart, found_restart)
                             if found_restart:
-                                write_fic_to_csv(fandom, row[0], only_first_chap, storywriter, chapterwriter, errorwriter, storycolumns, chaptercolumns, headers, output_dirpath=output_dirpath)
+                                write_fic_to_csv(fandom, row[0], only_first_chap, storywriter, chapterwriter, errorwriter, storycolumns, chaptercolumns, headers, output_dirpath=output_dirpath, write_whole_fics=True)
                             else:
                                 print('Skipping already processed fic')
 
             else:
                 for fic_id in fic_ids:
-                    write_fic_to_csv(fandom, fic_id, only_first_chap, storywriter, chapterwriter, errorwriter, storycolumns, chaptercolumns, headers, output_dirpath=output_dirpath) 
+                    write_fic_to_csv(fandom, fic_id, only_first_chap, storywriter, chapterwriter, errorwriter, storycolumns, chaptercolumns, headers, output_dirpath=output_dirpath, write_whole_fics=True)
 main()
