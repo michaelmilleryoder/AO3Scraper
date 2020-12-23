@@ -36,6 +36,7 @@ class FicIdManipulator():
         for fname in os.listdir(self.sections_dirpath):
             fic_ids_path = os.path.join(self.sections_dirpath, fname)
             fic_ids_data = pd.read_csv(fic_ids_path, index_col=0, header=None)
+            pdb.set_trace() # TODO: verify no 'url:' in fic_id column, or any strings (is it a header?)
             self.scraped_fic_ids = pd.concat([self.scraped_fic_ids, fic_ids_data])
 
     def exclude_fic_ids(self):
@@ -60,7 +61,7 @@ class FicIdManipulator():
         print(f"Output fic IDs saved to {self.outpath}")
 
 
-def main():
+def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('outpath', nargs='?',
             default=None,
@@ -74,11 +75,17 @@ def main():
     parser.add_argument('--exclude-path', dest='exclude_path', nargs='?', 
             default=None,
             help='Path to the metadata CSV of stories that are already scraped')
-    args = parser.parse_args()
+
+    return parser.parse_args()
+
+
+def main():
+    args = get_args()
 
     manipulator = FicIdManipulator(args.outpath, args.sections_dirpath, args.scraped_path, args.exclude_path)
     manipulator.manipulate()
     manipulator.save_fic_ids()
+
 
 if __name__ == '__main__':
     main()

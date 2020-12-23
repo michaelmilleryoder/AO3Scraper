@@ -16,6 +16,7 @@ import sys
 import datetime
 import argparse
 from tqdm import tqdm
+import pdb
 
 page_empty = False
 base_url = ""
@@ -63,7 +64,8 @@ def get_args():
         help='user http header')
     parser.add_argument(
         '--start_with_page', default=1, 
-        help='page to start scraping')
+        help='page to start scraping') 
+        # doesn't appear to work since there is no use of this variable?
     parser.add_argument(
         '--num_to_retrieve', default='a', 
         help='how many fic ids you want')
@@ -119,6 +121,15 @@ def get_ids(header_info=''):
             print (url, "FAILED TWICE -- SKIPPING")
             return []
 
+    wait_time = 15
+    increment = 1
+    while req.text == 'Retry later\n':
+        tqdm.write("Page reads 'retry later'")
+        time.sleep(wait_time * increment)
+        req = requests.get(url, headers=headers)
+        increment += 1
+        if increment > 6:
+            break
     soup = BeautifulSoup(req.text, "lxml")
 
     # some responsiveness in the "UI"
@@ -129,6 +140,8 @@ def get_ids(header_info=''):
     # see if we've gone too far and run out of fic: 
     if (len(works) is 0):
         page_empty = True
+        print(f'\nEnded on url {url}')
+        pdb.set_trace()
 
     # process list for new fic ids
     ids = []

@@ -29,6 +29,9 @@
 #
 # Reformatted output to be consistent with fanfiction.net scraper
 # Sept 2018  Chris Bogart
+#
+# Added tmux progress bar, changed some error reporting
+# Dec 2020 Michael Miller Yoder
 #######
 
 import requests
@@ -203,9 +206,13 @@ def contentdir(output_dirpath, fandom):
     return os.path.join(output_dirpath, "ao3_" + fandom + "_text/stories/")
 
 def contentfile(output_dirpath, fandom, workid, chapterid): 
-    return contentdir(output_dirpath, fandom) + workid + "_" + str(chapterid).zfill(4) + ".csv"
+    if chapterid is None:
+        contentpath = contentdir(output_dirpath, fandom) + workid + ".csv"
+    else:
+        contentpath = contentdir(output_dirpath, fandom) + workid + "_" + str(chapterid).zfill(4) + ".csv"
+    return contentpath
 
-def write_fic_to_csv(fandom, fic_id, only_first_chap, storywriter, chapterwriter, errorwriter, storycolumns, chaptercolumns, header_info='', output_dirpath=''):
+def write_fic_to_csv(fandom, fic_id, only_first_chap, storywriter, chapterwriter, errorwriter, storycolumns, chaptercolumns, header_info='', output_dirpath='', write_whole_fics=False):
     '''
     fandom is the grouping that determines filenames etc.
     fic_id is the AO3 ID of a fic, found every URL /works/[id].
@@ -213,6 +220,8 @@ def write_fic_to_csv(fandom, fic_id, only_first_chap, storywriter, chapterwriter
     the output of this program is a row in the CSV file containing all metadata 
     and the fic content itself.
     header_info should be the header info to encourage ethical scraping.
+    write_whole_fics: Whether to write whole fic output (True) or by default (False),
+        will write separate files for chapters
     '''
     tqdm.write('Scraping {}'.format(fic_id))
     get_comments = True
@@ -291,11 +300,13 @@ def write_fic_to_csv(fandom, fic_id, only_first_chap, storywriter, chapterwriter
                   "chapter_count": len(chapters) }
         strow = dict(strow, **tags)
         strow = dict(strow, **stats)
-        storywriter.writerow([safe(maybe_json(strow.get(k,"null"))) for k in storycolumns])
+        #storywriter.writerow([safe(maybe_json(strow.get(k,"null"))) for k in storycolumns])
+        storywriter.writerow([maybe_json(strow.get(k,"null")) for k in storycolumns])
             
 
         # get div class=notes under div class=preface, and under div class=afterword; class-level notes
         # get div class=summary under div class=preface
+        outlines = []
         for ch, chall in enumerate(chapters):
             chapter_title = chapter_titles[ch]
             paras = [t.text if type(t) is bs4.element.Tag else t for t in into_chunks(chall)]
@@ -317,25 +328,36 @@ def write_fic_to_csv(fandom, fic_id, only_first_chap, storywriter, chapterwriter
             # div class=end notes --> id=notes
             chrow =  {
                  "fic_id": fic_id,
-                 "title": title.encode("utf-8"),
-                 "summary": ch_summary.encode("utf-8"),
-                 "preface_notes": ch_preface_notes.encode("utf-8"),
-                 "afterword_notes": ch_afterword_notes.encode("utf-8"),
+                 "title": title,
+                 "summary": ch_summary,
+                 "preface_notes": ch_preface_notes,
+                 "afterword_notes": ch_afterword_notes,
                  "chapter_num": str(ch+1),
-                 "chapter_title": chapter_title.encode("utf-8"),
+                 "chapter_title": chapter_title,
                  "paragraph_count": len(paras)}
             chapterwriter.writerow([chrow.get(k,"null") for k in chaptercolumns])
-            content_out = csv.writer(open(contentfile(output_dirpath, fandom, fic_id, ch+1), "w"))
+            if not write_whole_fics:
+                content_out = csv.writer(open(contentfile(output_dirpath, fandom, fic_id, ch+1), "w"))
+                content_out.writerow(['fic_id', 'chapter_id','para_id','text'])
+                for pn, para in enumerate(paras):
+                    try:
+                        #content_out.writerow([fic_id, ch+1, pn+1, para.encode("utf-8")])
+                        content_out.writerow([fic_id, ch+1, pn+1, para])
+                    except:
+                        print('Unexpected error: ', sys.exc_info()[0])
+                        pdb.set_trace()
+                        error_row = [fic_id] +  [sys.exc_info()[0]]
+                        errorwriter.writerow(error_row)
+                content_out = None
+            else: # will write out whole fic at once
+                outlines.append([fic_id, ch+1, pn+1, para])
+
+        if write_whole_fics:
+            content_out = csv.writer(open(contentfile(output_dirpath, fandom, fic_id, None), "w"))
             content_out.writerow(['fic_id', 'chapter_id','para_id','text'])
-            for pn, para in enumerate(paras):
-                try:
-                    content_out.writerow([fic_id, ch+1, pn+1, para.encode("utf-8")])
-                except:
-                    print('Unexpected error: ', sys.exc_info()[0])
-                    pdb.set_trace()
-                    error_row = [fic_id] +  [sys.exc_info()[0]]
-                    errorwriter.writerow(error_row)
-            content_out = None
+            for line in outlines:
+                content_out.writerow(line)
+                
         tqdm.write('Done.')
         tqdm.write(' ')
 
