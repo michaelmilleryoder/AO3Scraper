@@ -30,7 +30,7 @@
 # Reformatted output to be consistent with fanfiction.net scraper
 # Sept 2018  Chris Bogart
 #
-# Added tmux progress bar, changed some error reporting
+# Added tmux progress bar, changed some error reporting, handled Python 3
 # Dec 2020 Michael Miller Yoder
 #######
 
@@ -310,7 +310,8 @@ def write_fic_to_csv(fandom, fic_id, only_first_chap, storywriter, chapterwriter
         for ch, chall in enumerate(chapters):
             chapter_title = chapter_titles[ch]
             paras = [t.text if type(t) is bs4.element.Tag else t for t in into_chunks(chall)]
-            paras = [unidecode(t).strip() for t in paras if len(t.strip()) > 0 and t.strip() != "Chapter Text"]
+            #paras = [unidecode(t).strip() for t in paras if len(t.strip()) > 0 and t.strip() != "Chapter Text"]
+            paras = [t.strip() for t in paras if len(t.strip()) > 0 and t.strip() != "Chapter Text"]
              
             ch_preface_notes = ""
             ch_summary = ""
