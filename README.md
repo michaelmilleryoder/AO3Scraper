@@ -4,6 +4,7 @@ Forked from [@radiolarian](https://github/radiolarian). Changes include:
 * The output format to a CSV (changes largely made by [@cbogart](https://github.com/cbogart)).
 * I added the optional flag `--outputdir` to `ao3_get_fanfics.py`. With this flag, you can specify which directory output directories will be saved in.
 * Progress bars from the `tqdm` package (which is now a dependency
+* Saving the entire work by default instead of each chapter in a separate file
 * Handling a `Page reads 'retry later'` response from AO3 when getting work IDs
 * Better Python 3 compatibility (removing explicit unicode encodings)
 
